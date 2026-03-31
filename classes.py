@@ -13,6 +13,7 @@ class Board:
         self.white_promotion = pygame.image.load(".\\Pieces\\white_promotion.png")
         self.image = pygame.image.load(".\\Pieces\\board.png")
         self.board = self.start()
+        self.position_history = {}
 
     def start(self):
         board = []
@@ -336,6 +337,45 @@ class Board:
 
         if (black, white) in draws:
             self.draw = True
+
+    def get_position_key(self):
+        """Tạo key đại diện cho trạng thái bàn cờ hiện tại."""
+        key = []
+        for line in self.board:
+            for _, piece in line:
+                if piece == 0:
+                    key.append(0)
+                else:
+                    key.append((type(piece).__name__, piece.team))
+        key.append(self.turn)
+        return tuple(key)
+ 
+    def record_position(self):
+        """Ghi lại vị trí hiện tại vào lịch sử. Gọi sau mỗi nước đi."""
+        key = self.get_position_key()
+        self.position_history[key] = self.position_history.get(key, 0) + 1
+        if self.position_history[key] >= 3:
+            self.draw = True
+ 
+    def is_repetition_move(self, fy, fx, ty, tx):
+        """
+        Kiểm tra nếu nước đi (fy,fx)->(ty,tx) sẽ tạo vị trí lặp lần thứ 3.
+        Dùng để ngăn bot và người chọn nước đó.
+        """
+        piece    = self.board[fy][fx][1]
+        captured = self.board[ty][tx][1]
+        # Thử move tạm
+        self.board[ty][tx][1] = piece
+        self.board[fy][fx][1] = 0
+        old_turn = self.turn
+        self.turn = (self.turn + 1) % 2
+        key = self.get_position_key()
+        count = self.position_history.get(key, 0)
+        # Undo
+        self.board[fy][fx][1] = piece
+        self.board[ty][tx][1] = captured
+        self.turn = old_turn
+        return count >= 2   # đã 2 lần → thêm 1 = lần 3, bị cấm
 
 class Piece:
     def __init__(self, value, team, image):
