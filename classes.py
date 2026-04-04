@@ -659,10 +659,10 @@ class King(Piece):
             self.long_castle = False
 
         if (pos_y, pos_x) not in all_moves:
-            if self.short_castle is True and board[pos_y][pos_x + 1][1] == 0 and board[pos_y][pos_x + 2][1] == 0 and not \
+            if self.short_castle is True and pos_x + 2 < len(board[pos_y]) and board[pos_y][pos_x + 1][1] == 0 and board[pos_y][pos_x + 2][1] == 0 and not \
                     ((pos_y, pos_x + 2) in all_moves or (pos_y, pos_x + 1) in all_moves):
                 moves.append((pos_y, pos_x + 2))
-            if self.long_castle is True and board[pos_y][pos_x - 1][1] == 0 and board[pos_y][pos_x - 2][1] == 0 and \
+            if self.long_castle is True and pos_x - 3 >= 0 and board[pos_y][pos_x - 1][1] == 0 and board[pos_y][pos_x - 2][1] == 0 and \
                     board[pos_y][pos_x - 3][1] == 0 and not ((pos_y, pos_x - 1) in all_moves or (pos_y, pos_x - 2) in all_moves or \
                         (pos_y, pos_x - 3) in all_moves):
                 moves.append((pos_y, pos_x - 2))
