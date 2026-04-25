@@ -1,5 +1,6 @@
 from classes import *
 from algo.alphabeta import AlphaBeta
+from algo.mcts import MCTS
 
 
 C_BG        = (15,  15,  20)
@@ -12,6 +13,8 @@ C_RED       = (200,  60,  60)
 C_GREEN     = ( 60, 180,  80)
 C_BTN_HOVER = (45,  45,  65)
 C_TEXT_DIM  = (130, 130, 150)
+C_CYAN      = ( 60, 180, 220)
+C_CYAN_DIM  = ( 30, 100, 130)
 
 
 def draw_rounded_rect(surface, color, rect, radius=12, border=0, border_color=None):
@@ -36,38 +39,95 @@ def show_menu(window, clock):
         {"label": "Đen  vs  Bot",    "icon": "♚", "team": 1,  "desc": "Bạn đánh quân đen — đi sau"},
         {"label": "Bot  vs  Bot",    "icon": "⚙", "team": -1, "desc": "Xem AI tự đánh với nhau"},
     ]
-    depth_options = [
+
+    algo_options = [
+        {"label": "Alpha-Beta", "key": "alphabeta", "desc": "Minimax + cắt tỉa"},
+        {"label": "MCTS",       "key": "mcts",      "desc": "Monte Carlo Tree Search"},
+    ]
+
+    depth_options_ab = [
         {"label": "Dễ",          "depth": 2,  "time_limit": None, "desc": "Depth 2 — rất nhanh"},
         {"label": "Bình thường", "depth": 3,  "time_limit": None, "desc": "Depth 3 — cân bằng"},
         {"label": "Khó",         "depth": 99, "time_limit": 5.0,  "desc": "Tối đa 5s/nước"},
     ]
+    depth_options_mcts = [
+        {"label": "Dễ",          "iterations": 100,  "time_limit": None, "desc": "100 iterations"},
+        {"label": "Bình thường", "iterations": 300,  "time_limit": None, "desc": "300 iterations"},
+        {"label": "Khó",         "iterations": 99999,"time_limit": 5.0,  "desc": "Tối đa 5s/nước"},
+    ]
+
+    # Bot vs Bot sub-modes (chỉ hiện khi chọn Bot vs Bot)
+    bvb_options = [
+        {"label": "AB vs AB",     "white_algo": "alphabeta", "black_algo": "alphabeta",
+         "desc": "Alpha-Beta cả hai bên"},
+        {"label": "MCTS vs MCTS", "white_algo": "mcts",      "black_algo": "mcts",
+         "desc": "MCTS cả hai bên"},
+        {"label": "AB vs MCTS",   "white_algo": "alphabeta", "black_algo": "mcts",
+         "desc": "Trắng AB — Đen MCTS"},
+    ]
 
     selected_mode  = 0
+    selected_algo  = 0     # 0 = alphabeta, 1 = mcts
     selected_depth = 1
-    btn_w, btn_h   = 480, 64
+    selected_bvb   = 0     # Bot vs Bot sub-mode
+
+    # Layout constants
+    btn_w, btn_h   = 480, 54
     btn_x          = (W - btn_w) // 2
-    mode_y_start   = 170
-    mode_gap       = 76
+    mode_y_start   = 150
+    mode_gap       = 62
+
+    # Algo selector
+    algo_w         = 220
+    algo_gap       = 16
+    algo_total     = 2 * algo_w + algo_gap
+    algo_x_start   = (W - algo_total) // 2
+
+    # Difficulty
     depth_w        = 140
     depth_gap      = 16
     depth_total    = 3 * depth_w + 2 * depth_gap
     depth_x_start  = (W - depth_total) // 2
-    depth_y        = 450
-    start_rect     = pygame.Rect((W - 200) // 2, 530, 200, 50)
+
+    # Bot vs Bot sub-modes
+    bvb_btn_w      = 140
+    bvb_gap        = 12
+    bvb_total      = 3 * bvb_btn_w + 2 * bvb_gap
+    bvb_x_start    = (W - bvb_total) // 2
 
     running = True
     while running:
         mx, my = pygame.mouse.get_pos()
         window.fill(C_BG)
 
-        title_surf = font_title.render("♟  Chess AI  ♟", True, C_GOLD)
-        sub_surf   = font_sub.render("Alpha-Beta Pruning Bot", True, C_TEXT_DIM)
-        window.blit(title_surf, title_surf.get_rect(centerx=W//2, top=50))
-        window.blit(sub_surf,   sub_surf.get_rect(centerx=W//2,   top=102))
-        pygame.draw.line(window, C_BORDER, (60, 135), (W - 60, 135), 1)
+        is_bvb = (selected_mode == 2)
 
+        # ── Dynamic Y positions ───────────────────────────
+        algo_label_y = mode_y_start + 3 * mode_gap + 2
+        algo_y       = algo_label_y + 18
+
+        if is_bvb:
+            bvb_label_y  = algo_y + 60
+            bvb_y        = bvb_label_y + 18
+            diff_label_y = bvb_y + 60
+        else:
+            diff_label_y = algo_y + 60
+
+        diff_y       = diff_label_y + 18
+        start_y      = diff_y + 68
+
+        start_rect   = pygame.Rect((W - 200) // 2, start_y, 200, 50)
+
+        # ── Title ─────────────────────────────────────────
+        title_surf = font_title.render("♟  Chess AI  ♟", True, C_GOLD)
+        sub_surf   = font_sub.render("Alpha-Beta & MCTS Bot", True, C_TEXT_DIM)
+        window.blit(title_surf, title_surf.get_rect(centerx=W//2, top=40))
+        window.blit(sub_surf,   sub_surf.get_rect(centerx=W//2,   top=88))
+        pygame.draw.line(window, C_BORDER, (60, 118), (W - 60, 118), 1)
+
+        # ── Mode buttons ─────────────────────────────────
         lbl = font_label.render("CHỌN CHẾ ĐỘ CHƠI", True, C_TEXT_DIM)
-        window.blit(lbl, lbl.get_rect(centerx=W//2, top=148))
+        window.blit(lbl, lbl.get_rect(centerx=W//2, top=124))
 
         for i, m in enumerate(mode_buttons):
             rect    = pygame.Rect(btn_x, mode_y_start + i * mode_gap, btn_w, btn_h)
@@ -77,21 +137,73 @@ def show_menu(window, clock):
             bdr = C_GOLD      if is_sel else C_BORDER
             bw  = 2           if is_sel else 1
             draw_rounded_rect(window, bg, rect, radius=10, border=bw, border_color=bdr)
-            icon_surf = pygame.font.SysFont("Segoe UI Symbol", 26).render(
+            icon_surf = pygame.font.SysFont("Segoe UI Symbol", 22).render(
                 m["icon"], True, C_GOLD if is_sel else C_WHITE)
-            window.blit(icon_surf, (rect.x + 20, rect.y + (btn_h - icon_surf.get_height()) // 2))
+            window.blit(icon_surf, (rect.x + 16, rect.y + (btn_h - icon_surf.get_height()) // 2))
             lbl_surf  = font_btn.render(m["label"], True, C_GOLD if is_sel else C_WHITE)
             desc_surf = font_small.render(m["desc"], True, C_GOLD_DIM if is_sel else C_TEXT_DIM)
-            window.blit(lbl_surf,  (rect.x + 62, rect.y + 14))
-            window.blit(desc_surf, (rect.x + 64, rect.y + 36))
+            window.blit(lbl_surf,  (rect.x + 52, rect.y + 10))
+            window.blit(desc_surf, (rect.x + 54, rect.y + 32))
 
-        pygame.draw.line(window, C_BORDER, (60, 425), (W - 60, 425), 1)
-        lbl2 = font_label.render("ĐỘ KHÓ CỦA BOT", True, C_TEXT_DIM)
-        window.blit(lbl2, lbl2.get_rect(centerx=W//2, top=432))
+        # ── Algorithm selector (only for non-BvB) ────────
+        if not is_bvb:
+            pygame.draw.line(window, C_BORDER, (60, algo_label_y - 6), (W - 60, algo_label_y - 6), 1)
+            lbl2 = font_label.render("CHỌN THUẬT TOÁN", True, C_TEXT_DIM)
+            window.blit(lbl2, lbl2.get_rect(centerx=W//2, top=algo_label_y))
 
-        for i, d in enumerate(depth_options):
+            for i, a in enumerate(algo_options):
+                ax      = algo_x_start + i * (algo_w + algo_gap)
+                rect    = pygame.Rect(ax, algo_y, algo_w, 48)
+                hovered = rect.collidepoint(mx, my)
+                is_sel  = (i == selected_algo)
+                bg  = C_CYAN_DIM if is_sel else (C_BTN_HOVER if hovered else C_PANEL)
+                bdr = C_CYAN     if is_sel else C_BORDER
+                bw  = 2          if is_sel else 1
+                draw_rounded_rect(window, bg, rect, radius=8, border=bw, border_color=bdr)
+                lbl_surf  = font_btn.render(a["label"], True, C_CYAN if is_sel else C_WHITE)
+                desc_surf = font_small.render(a["desc"], True, C_CYAN_DIM if is_sel else C_TEXT_DIM)
+                window.blit(lbl_surf,  lbl_surf.get_rect(centerx=rect.centerx,  top=rect.y + 6))
+                window.blit(desc_surf, desc_surf.get_rect(centerx=rect.centerx, top=rect.y + 28))
+
+        # ── Bot vs Bot sub-modes ──────────────────────────
+        if is_bvb:
+            pygame.draw.line(window, C_BORDER, (60, algo_label_y - 6), (W - 60, algo_label_y - 6), 1)
+            lbl_bvb = font_label.render("CHỌN ĐỐI ĐẦU", True, C_TEXT_DIM)
+            window.blit(lbl_bvb, lbl_bvb.get_rect(centerx=W//2, top=algo_label_y))
+
+            for i, b in enumerate(bvb_options):
+                bx      = bvb_x_start + i * (bvb_btn_w + bvb_gap)
+                rect    = pygame.Rect(bx, algo_y, bvb_btn_w, 48)
+                hovered = rect.collidepoint(mx, my)
+                is_sel  = (i == selected_bvb)
+                bg  = C_CYAN_DIM if is_sel else (C_BTN_HOVER if hovered else C_PANEL)
+                bdr = C_CYAN     if is_sel else C_BORDER
+                bw  = 2          if is_sel else 1
+                draw_rounded_rect(window, bg, rect, radius=8, border=bw, border_color=bdr)
+                lbl_surf  = font_btn.render(b["label"], True, C_CYAN if is_sel else C_WHITE)
+                desc_surf = font_small.render(b["desc"], True, C_CYAN_DIM if is_sel else C_TEXT_DIM)
+                window.blit(lbl_surf,  lbl_surf.get_rect(centerx=rect.centerx,  top=rect.y + 6))
+                window.blit(desc_surf, desc_surf.get_rect(centerx=rect.centerx, top=rect.y + 28))
+
+        # ── Difficulty ────────────────────────────────────
+        pygame.draw.line(window, C_BORDER, (60, diff_label_y - 6), (W - 60, diff_label_y - 6), 1)
+        lbl3 = font_label.render("ĐỘ KHÓ CỦA BOT", True, C_TEXT_DIM)
+        window.blit(lbl3, lbl3.get_rect(centerx=W//2, top=diff_label_y))
+
+        # Chọn bảng difficulty phù hợp
+        if is_bvb:
+            # Nếu BvB có MCTS → hiện options MCTS, nếu AB vs AB → hiện AB
+            bvb_sel = bvb_options[selected_bvb]
+            if bvb_sel["white_algo"] == "mcts" or bvb_sel["black_algo"] == "mcts":
+                current_depth_options = depth_options_mcts
+            else:
+                current_depth_options = depth_options_ab
+        else:
+            current_depth_options = depth_options_mcts if selected_algo == 1 else depth_options_ab
+
+        for i, d in enumerate(current_depth_options):
             dx      = depth_x_start + i * (depth_w + depth_gap)
-            rect    = pygame.Rect(dx, depth_y, depth_w, 52)
+            rect    = pygame.Rect(dx, diff_y, depth_w, 52)
             hovered = rect.collidepoint(mx, my)
             is_sel  = (i == selected_depth)
             bg  = C_GOLD_DIM if is_sel else (C_BTN_HOVER if hovered else C_PANEL)
@@ -103,6 +215,7 @@ def show_menu(window, clock):
             window.blit(lbl_surf,  lbl_surf.get_rect(centerx=rect.centerx,  top=rect.y + 8))
             window.blit(desc_surf, desc_surf.get_rect(centerx=rect.centerx, top=rect.y + 32))
 
+        # ── Start button ─────────────────────────────────
         start_hov = start_rect.collidepoint(mx, my)
         draw_rounded_rect(window, C_GREEN if start_hov else (40, 140, 60),
                           start_rect, radius=10, border=2, border_color=C_GREEN)
@@ -110,24 +223,86 @@ def show_menu(window, clock):
         window.blit(start_lbl, start_lbl.get_rect(center=start_rect.center))
         pygame.display.flip()
 
+        # ── Events ────────────────────────────────────────
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); exit()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Mode buttons
                 for i, m in enumerate(mode_buttons):
                     r = pygame.Rect(btn_x, mode_y_start + i * mode_gap, btn_w, btn_h)
-                    if r.collidepoint(mx, my): selected_mode = i
+                    if r.collidepoint(mx, my):
+                        selected_mode = i
+
+                # Algo buttons (non-BvB)
+                if not is_bvb:
+                    for i in range(2):
+                        ax = algo_x_start + i * (algo_w + algo_gap)
+                        r  = pygame.Rect(ax, algo_y, algo_w, 48)
+                        if r.collidepoint(mx, my):
+                            selected_algo = i
+
+                # BvB sub-mode buttons
+                if is_bvb:
+                    for i in range(3):
+                        bx = bvb_x_start + i * (bvb_btn_w + bvb_gap)
+                        r  = pygame.Rect(bx, algo_y, bvb_btn_w, 48)
+                        if r.collidepoint(mx, my):
+                            selected_bvb = i
+
+                # Difficulty
                 for i in range(3):
                     dx = depth_x_start + i * (depth_w + depth_gap)
-                    r  = pygame.Rect(dx, depth_y, depth_w, 52)
-                    if r.collidepoint(mx, my): selected_depth = i
-                if start_rect.collidepoint(mx, my): running = False
+                    r  = pygame.Rect(dx, diff_y, depth_w, 52)
+                    if r.collidepoint(mx, my):
+                        selected_depth = i
+
+                if start_rect.collidepoint(mx, my):
+                    running = False
+
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN: running = False
+                if event.key == pygame.K_RETURN:
+                    running = False
         clock.tick(60)
 
-    opt = depth_options[selected_depth]
-    return mode_buttons[selected_mode]["team"], opt["depth"], opt["time_limit"]
+    # ── Build result ──────────────────────────────────────
+    team = mode_buttons[selected_mode]["team"]
+
+    if is_bvb:
+        bvb_sel = bvb_options[selected_bvb]
+        opt = current_depth_options[selected_depth]
+        return {
+            "team": team,
+            "bvb_white_algo": bvb_sel["white_algo"],
+            "bvb_black_algo": bvb_sel["black_algo"],
+            "difficulty": opt,
+        }
+    else:
+        algo_key = algo_options[selected_algo]["key"]
+        opt = current_depth_options[selected_depth]
+        return {
+            "team": team,
+            "algo": algo_key,
+            "difficulty": opt,
+        }
+
+
+def _make_bot(board, algo_key, team, difficulty):
+    """Factory: tạo bot theo thuật toán và difficulty đã chọn."""
+    if algo_key == "mcts":
+        return MCTS(
+            board,
+            team=team,
+            iterations=difficulty.get("iterations", 2000),
+            time_limit=difficulty.get("time_limit"),
+        )
+    else:
+        return AlphaBeta(
+            board,
+            team=team,
+            depth=difficulty.get("depth", 3),
+            time_limit=difficulty.get("time_limit"),
+        )
 
 
 def make_bot_move(board, bot):
@@ -170,7 +345,7 @@ def make_bot_move(board, bot):
             board.check_check(all_moves)
             board.check_checkmate_or_stalemate()
             board.check_draw()
-            board.record_position()   # ← ghi lịch sử sau phong cấp
+            board.record_position()
             return
 
     board.board[fy][fx][1] = 0
@@ -180,10 +355,10 @@ def make_bot_move(board, bot):
     board.check_check(all_moves)
     board.check_checkmate_or_stalemate()
     board.check_draw()
-    board.record_position()   # ← ghi lịch sử sau mỗi nước bot
+    board.record_position()
 
 
-def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
+def run_game(window, clock, config):
     try:
         font_ui    = pygame.font.SysFont("Verdana", 14, bold=True)
         font_small = pygame.font.SysFont("Verdana", 12)
@@ -196,11 +371,25 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
     draw_msg      = font_ui.render("Draw!!", True, C_GOLD)
     menu_hint     = font_small.render("ENTER = về menu  |  R = chơi lại", True, C_TEXT_DIM)
 
-    board     = Board()
-    bot_team  = 1 - human_team if human_team >= 0 else 1
-    bot       = AlphaBeta(board, team=bot_team, depth=bot_depth, time_limit=bot_time_limit)
-    bot_white = AlphaBeta(board, team=0,        depth=bot_depth, time_limit=bot_time_limit)
-    bot_black = AlphaBeta(board, team=1,        depth=bot_depth, time_limit=bot_time_limit)
+    board      = Board()
+    human_team = config["team"]
+    difficulty = config["difficulty"]
+
+    is_bvb = (human_team == -1 and "bvb_white_algo" in config)
+
+    if is_bvb:
+        # Bot vs Bot — mỗi bên có thể dùng thuật toán khác nhau
+        bot_white = _make_bot(board, config["bvb_white_algo"], 0, difficulty)
+        bot_black = _make_bot(board, config["bvb_black_algo"], 1, difficulty)
+        bot       = None  # không dùng
+        algo_label = f"{config['bvb_white_algo'].upper()} vs {config['bvb_black_algo'].upper()}"
+    else:
+        algo_key = config.get("algo", "alphabeta")
+        bot_team = 1 - human_team if human_team >= 0 else 1
+        bot      = _make_bot(board, algo_key, bot_team, difficulty)
+        bot_white = _make_bot(board, algo_key, 0, difficulty) if human_team == -1 else None
+        bot_black = _make_bot(board, algo_key, 1, difficulty) if human_team == -1 else None
+        algo_label = algo_key.upper()
 
     W, H        = window.get_size()
     selected    = None
@@ -240,7 +429,12 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
 
         if not game_over:
             side = "Trắng" if board.turn == 0 else "Đen"
-            who  = "  (Bot)" if (human_team == -1 or board.turn != human_team) else "  (Bạn)"
+            if human_team == -1:
+                who = f"  ({algo_label})"
+            elif board.turn != human_team:
+                who = f"  (Bot/{algo_label})"
+            else:
+                who = "  (Bạn)"
             turn_surf = font_small.render(f"Lượt: {side}{who}", True, C_TEXT_DIM)
             window.blit(turn_surf, (W - turn_surf.get_width() - 8, 6))
 
@@ -286,7 +480,7 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
                         board.check_check(all_moves)
                         board.check_checkmate_or_stalemate()
                         board.check_draw()
-                        board.record_position()   # ← ghi lịch sử sau phong cấp người
+                        board.record_position()
 
                 if event.key == pygame.K_RETURN: return "menu"
                 if event.key == pygame.K_r:      return "restart"
@@ -308,7 +502,6 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
                 if selected is not None and (index_y, index_x) in moves:
                     # ── Kiểm tra luật lặp trước khi cho người đi ──
                     if board.is_repetition_move(aux_index_y, aux_index_x, index_y, index_x):
-                        # Nước này sẽ tạo lặp lần 3 → không cho đi, bỏ chọn
                         moves    = []
                         selected = None
                         continue
@@ -349,7 +542,7 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
                     board.check_checkmate_or_stalemate()
                     board.check_draw()
                     if not board.promotion:
-                        board.record_position()   # ← ghi lịch sử sau nước người
+                        board.record_position()
 
                     moves    = []
                     selected = None
@@ -365,7 +558,6 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
                     for move in aux_moves:
                         try:
                             if board.board[move[0]][move[1]][1].team != board.turn:
-                                # Lọc luôn nước lặp lần 3 khỏi gợi ý
                                 if not board.is_repetition_move(index_y, index_x, move[0], move[1]):
                                     moves.append(move)
                         except AttributeError:
@@ -382,22 +574,20 @@ def run_game(window, clock, human_team, bot_depth, bot_time_limit=None):
 def main():
     pygame.init()
     pygame.font.init()
-    pygame.display.set_caption("Chess — Alpha-Beta AI")
+    pygame.display.set_caption("Chess — AI Bot")
     pygame.display.set_icon(pygame.image.load('.\\Pieces\\icon.png'))
-    window = pygame.display.set_mode((600, 600))
+    window = pygame.display.set_mode((600, 700))
     clock  = pygame.time.Clock()
 
-    action         = "menu"
-    human_team     = 0
-    bot_depth      = 3
-    bot_time_limit = None
+    action = "menu"
+    config = None
 
     while True:
         if action == "menu":
-            human_team, bot_depth, bot_time_limit = show_menu(window, clock)
+            config = show_menu(window, clock)
             action = "game"
         elif action in ("game", "restart"):
-            action = run_game(window, clock, human_team, bot_depth, bot_time_limit)
+            action = run_game(window, clock, config)
 
 
 if __name__ == "__main__":
