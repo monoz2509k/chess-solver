@@ -1,0 +1,7 @@
+Material/
+__pycache__/
+algo/__pycache__/
+*.pyc
+
+results/
+patch*.py
